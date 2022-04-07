@@ -11,8 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "dotenv": "^16.0.0",
-    "node-tcp-relay": "^0.0.18"
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "@types/node": "^17.0.23",
