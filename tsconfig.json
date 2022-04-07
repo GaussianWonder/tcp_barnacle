@@ -1,0 +1,27 @@
+{
+  "type": "commonjs",
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es2021",
+    "sourceMap": true,
+    "outDir": "./build",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "lib": [
+      "es2021",
+      "dom"
+    ],
+  },
+  "include": [
+    "src/**/*.ts",
+    "node_modules/@types/puppeteer/index.d.ts"
+  ]
+}
