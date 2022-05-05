@@ -86,7 +86,6 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
         console.log(`${this.meIdentifier} received connection from ${socket.remoteAddress}:${socket.remotePort}`);
 
         let data: string = ''; // data received from `socket`
-        const redirectSocket = new net.Socket(); // payload redirect node
 
         socket.on('data', (chunk: Buffer) => {
           console.log(`${this.meIdentifier} received ${chunk.byteLength} bytes from ${this.receiverIdentifier}`);
@@ -96,33 +95,38 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
 
         socket.on('end', () => {
           console.log(`${socket.remoteAddress}:${socket.remotePort} finished sending ${this.meIdentifier} ${data}`);
-
-          if (data) {
-            redirectSocket.connect(this.payloadReceiver.port, this.payloadReceiver.host, () => {
+          const redirectSocket = net.createConnection(
+            {
+              host: this.payloadReceiver.host,
+              port: this.payloadReceiver.port,
+              localAddress: this.identifier.host,
+            },
+            () => {
               console.log(`${this.meIdentifier} successfully established a connection with the receiving end ${this.receiverIdentifier}`);
+              if (data) {
+                const unpacked: T = this.payloadProcessor.unpack(data);
+                if(this.payloadProcessor.filter(unpacked)) {
+                  const next: M = this.payloadProcessor.map(unpacked);
+                  const nextPacked: string = this.payloadProcessor.pack(next);
 
-              const unpacked: T = this.payloadProcessor.unpack(data);
-              if(this.payloadProcessor.filter(unpacked)) {
-                const next: M = this.payloadProcessor.map(unpacked);
-                const nextPacked: string = this.payloadProcessor.pack(next);
-
-                redirectSocket.write(nextPacked, () => {
-                  console.log(`${this.meIdentifier} finished writing to ${redirectSocket.remoteAddress}`);
+                  redirectSocket.write(nextPacked, () => {
+                    console.log(`${this.meIdentifier} finished writing to ${redirectSocket.remoteAddress}`);
+                    this.endSocketConnection(redirectSocket);
+                  });
+                } else {
                   this.endSocketConnection(redirectSocket);
-                });
+                }
               } else {
-                this.endSocketConnection(redirectSocket);
+                this.endSocketConnection(socket);
               }
-            });
+            }
+          );
 
-            redirectSocket.on('close', () => {
-              console.log(`Connection between ${this.meIdentifier} and ${this.receiverIdentifier} is closed`);
+          redirectSocket.on('close', () => {
+            console.log(`Connection between ${this.meIdentifier} and ${this.receiverIdentifier} is closed`);
 
-              this.endSocketConnection(socket);
-            });
-          } else {
             this.endSocketConnection(socket);
-          }
+          });
         });
       })
       .listen(this.identifier.port, this.identifier.host);

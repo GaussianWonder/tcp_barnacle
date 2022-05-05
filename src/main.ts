@@ -3,7 +3,7 @@ import TcpSocketBuilder, { PayloadProcessor } from './ring';
 
 // These can be different for all socket servers
 //  pay attention to payload processors' types though
-const portToUse = 1337;
+// const portToUse = 1337;
 
 interface PayloadType {
 	value: number;
@@ -20,11 +20,11 @@ const payloadProcessor: PayloadProcessor<PayloadType, PayloadType> = {
 const A = new TcpSocketBuilder<PayloadType, PayloadType>()
 	.listen({
 		host: '127.0.0.1',
-		port: portToUse,
+		port: 1337,
 	})
 	.redirectPayload({
 		host: '127.0.0.2',
-		port: portToUse,
+		port: 1338,
 	})
 	.processor(payloadProcessor)
 	.build();
@@ -32,11 +32,11 @@ const A = new TcpSocketBuilder<PayloadType, PayloadType>()
 const B = new TcpSocketBuilder<PayloadType, PayloadType>()
 	.listen({
 		host: '127.0.0.2',
-		port: portToUse,
+		port: 1338,
 	})
 	.redirectPayload({
 		host: '127.0.0.3',
-		port: portToUse,
+		port: 1339,
 	})
 	.processor(payloadProcessor)
 	.build();
@@ -44,17 +44,17 @@ const B = new TcpSocketBuilder<PayloadType, PayloadType>()
 const C = new TcpSocketBuilder<PayloadType, PayloadType>()
 	.listen({
 		host: '127.0.0.3',
-		port: portToUse,
+		port: 1339,
 	})
 	.redirectPayload({
 		host: '127.0.0.1',
-		port: portToUse,
+		port: 1337,
 	})
 	.processor(payloadProcessor)
 	.build();
 
 const initSocket = new net.Socket();
-initSocket.connect(portToUse, '127.0.0.1', () => {
+initSocket.connect(1337, '127.0.0.1', () => {
 	// init the request by sending A a payload
 	initSocket.write(payloadProcessor.pack({ value: 0 }), () => {
 		initSocket.end(() => {
