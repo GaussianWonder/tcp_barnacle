@@ -12,10 +12,12 @@ export interface TcpSocketBuilderInterface {
 
 export interface PayloadProcessor<T, M> {
   unpack: (data: Buffer) => T;
-  filter: (data: T) => boolean;
+  filter: (data: T, ctx: TcpSocketBuilderInterface) => boolean;
   map: (data: T) => M;
   pack: (data: M) => string | Uint8Array;
 }
+
+export type ForwardingProcessor<T> = PayloadProcessor<T, T>;
 
 export const serverMap: Map<TcpSocketIdentifier, net.Server> = new Map();
 
@@ -61,10 +63,12 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
   }
 
   get receiverIdentifier() {
+    if (!this.payloadReceiver) return '<no receiver>';
     return this.readableIdentifier(this.payloadReceiver);
   }
 
   get receiverServer(): net.Server | null {
+    if (!this.payloadReceiver) return null;
     return serverMap.get(this.payloadReceiver) ?? null;
   }
 
@@ -77,7 +81,7 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
   // Create the server
 
   public build(): net.Server {
-    if (this.payloadReceiver === null || this.identifier === null || this.payloadProcessor === null) {
+    if (this.identifier === null || this.payloadProcessor === null) {
       throw new Error("Server properties are not completely built. Make sure all properties are given value before calling build()!");
     }
 
@@ -88,12 +92,17 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
         const chunks: Buffer[] = [];
 
         socket.on('data', (chunk: Buffer) => {
-          console.log(`${this.meIdentifier} received ${chunk.byteLength} bytes from ${this.receiverIdentifier}`);
+          console.log(`${this.meIdentifier} received ${chunk.byteLength} bytes from ${socket.remoteAddress}:${socket.remotePort}`);
           chunks.push(chunk);
         });
 
         socket.on('end', () => {
           console.log(`${socket.remoteAddress}:${socket.remotePort} finished sending ${this.meIdentifier} ${chunks.length} chunks`);
+          if (!this.payloadReceiver) {
+            console.log(`${this.meIdentifier} has no payload receiver. Exit.`);
+            return;
+          }
+
           const redirectSocket = net.createConnection(
             {
               host: this.payloadReceiver.host,
@@ -108,7 +117,7 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
                 chunks.splice(0, chunks.length); // remove the contents of the chunks array
 
                 const unpacked: T = this.payloadProcessor.unpack(data);
-                if(this.payloadProcessor.filter(unpacked)) {
+                if(this.payloadProcessor.filter(unpacked, this)) {
                   const next: M = this.payloadProcessor.map(unpacked);
                   const nextPacked = this.payloadProcessor.pack(next);
 

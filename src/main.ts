@@ -2,3 +2,4 @@
 // ring();
 
 import relayNodes from './relay-nodes';
+relayNodes();
