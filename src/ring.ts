@@ -8,7 +8,7 @@ interface PayloadType {
 	value: number;
 }
 const payloadProcessor: PayloadProcessor<PayloadType, PayloadType> = {
-	unpack: JSON.parse,
+	unpack: (buf) => JSON.parse(buf.toString()),
   filter: (data) => data.value <= 100,
   map: ({ value }) => ({
 		value: value + 1,
@@ -16,7 +16,7 @@ const payloadProcessor: PayloadProcessor<PayloadType, PayloadType> = {
   pack: JSON.stringify,
 }
 
-export default function () {
+export default function() {
 	const A = new TcpSocketBuilder<PayloadType, PayloadType>()
 		.listen({
 			host: '127.0.0.1',

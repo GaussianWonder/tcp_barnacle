@@ -11,10 +11,10 @@ export interface TcpSocketBuilderInterface {
 }
 
 export interface PayloadProcessor<T, M> {
-  unpack: (data: string) => T;
+  unpack: (data: Buffer) => T;
   filter: (data: T) => boolean;
   map: (data: T) => M;
-  pack: (data: M) => string;
+  pack: (data: M) => string | Uint8Array;
 }
 
 export const serverMap: Map<TcpSocketIdentifier, net.Server> = new Map();
@@ -85,16 +85,15 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
       .createServer((socket) => {
         console.log(`${this.meIdentifier} received connection from ${socket.remoteAddress}:${socket.remotePort}`);
 
-        let data: string = ''; // data received from `socket`
+        const chunks: Buffer[] = [];
 
         socket.on('data', (chunk: Buffer) => {
           console.log(`${this.meIdentifier} received ${chunk.byteLength} bytes from ${this.receiverIdentifier}`);
-
-          data += chunk.toString();
+          chunks.push(chunk);
         });
 
         socket.on('end', () => {
-          console.log(`${socket.remoteAddress}:${socket.remotePort} finished sending ${this.meIdentifier} ${data}`);
+          console.log(`${socket.remoteAddress}:${socket.remotePort} finished sending ${this.meIdentifier} ${chunks.length} chunks`);
           const redirectSocket = net.createConnection(
             {
               host: this.payloadReceiver.host,
@@ -103,11 +102,15 @@ export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface
             },
             () => {
               console.log(`${this.meIdentifier} successfully established a connection with the receiving end ${this.receiverIdentifier}`);
-              if (data) {
+
+              if (chunks && chunks.length) {
+                const data: Buffer = Buffer.concat(chunks);
+                chunks.splice(0, chunks.length); // remove the contents of the chunks array
+
                 const unpacked: T = this.payloadProcessor.unpack(data);
                 if(this.payloadProcessor.filter(unpacked)) {
                   const next: M = this.payloadProcessor.map(unpacked);
-                  const nextPacked: string = this.payloadProcessor.pack(next);
+                  const nextPacked = this.payloadProcessor.pack(next);
 
                   redirectSocket.write(nextPacked, () => {
                     console.log(`${this.meIdentifier} finished writing to ${redirectSocket.remoteAddress}`);
