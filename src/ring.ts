@@ -1,137 +1,71 @@
-import * as net from "net";
+import * as net from 'net';
+import TcpSocketBuilder, { PayloadProcessor } from './builder';
 
-export interface TcpSocketIdentifier {
-  host: string;
-  port: number;
+// These can be different for all socket servers
+//  pay attention to payload processors' types though
+
+interface PayloadType {
+	value: number;
+}
+const payloadProcessor: PayloadProcessor<PayloadType, PayloadType> = {
+	unpack: JSON.parse,
+  filter: (data) => data.value <= 100,
+  map: ({ value }) => ({
+		value: value + 1,
+	}),
+  pack: JSON.stringify,
 }
 
-export interface TcpSocketBuilderInterface {
-  payloadReceiver: TcpSocketIdentifier;
-  identifier: TcpSocketIdentifier;
-}
+export default function () {
+	const A = new TcpSocketBuilder<PayloadType, PayloadType>()
+		.listen({
+			host: '127.0.0.1',
+			port: 1337,
+		})
+		.redirectPayload({
+			host: '127.0.0.2',
+			port: 1338,
+		})
+		.processor(payloadProcessor)
+		.build();
 
-export interface PayloadProcessor<T, M> {
-  unpack: (data: string) => T;
-  filter: (data: T) => boolean;
-  map: (data: T) => M;
-  pack: (data: M) => string;
-}
+	const B = new TcpSocketBuilder<PayloadType, PayloadType>()
+		.listen({
+			host: '127.0.0.2',
+			port: 1338,
+		})
+		.redirectPayload({
+			host: '127.0.0.3',
+			port: 1339,
+		})
+		.processor(payloadProcessor)
+		.build();
 
-export const serverMap: Map<TcpSocketIdentifier, net.Server> = new Map();
+	const C = new TcpSocketBuilder<PayloadType, PayloadType>()
+		.listen({
+			host: '127.0.0.3',
+			port: 1339,
+		})
+		.redirectPayload({
+			host: '127.0.0.1',
+			port: 1337,
+		})
+		.processor(payloadProcessor)
+		.build();
 
-export default class TcpSocketBuilder<T, M> implements TcpSocketBuilderInterface {
-  payloadReceiver: TcpSocketIdentifier | null;
-  identifier: TcpSocketIdentifier | null;
-  payloadProcessor: PayloadProcessor<T, M> | null;
-  
-  constructor(init?: TcpSocketBuilderInterface) {
-    if (init) {
-      this.identifier = init.identifier;
-      this.payloadReceiver = init.payloadReceiver;
-    } else {
-      this.payloadReceiver = null;
-      this.identifier = null;
-    }
-    this.payloadProcessor = null;
-  }
+	const initSocket = new net.Socket();
+	initSocket.connect(1337, '127.0.0.1', () => {
+		// init the request by sending A a payload
+		initSocket.write(payloadProcessor.pack({ value: 0 }), () => {
+			initSocket.end(() => {
+			});
+		});
+	});
 
-  public listen(identifier: TcpSocketIdentifier) {
-    this.identifier = identifier;
-    return this;
-  }
+	initSocket.on('end', function() {
+		console.log('Initial payload request is finished');
+		initSocket.destroy();
+	});
 
-  public redirectPayload(payloadReceiver: TcpSocketIdentifier) {
-    this.payloadReceiver = payloadReceiver;
-    return this;
-  }
-
-  public processor(payloadProcessor: PayloadProcessor<T, M>) {
-    this.payloadProcessor = payloadProcessor;
-    return this;
-  }
-
-  // Utility methods
-
-  private readableIdentifier(identifier: TcpSocketIdentifier): string {
-    return `${identifier.host}:${identifier.port}`;
-  }
-
-  get meIdentifier(): string {
-    return this.readableIdentifier(this.identifier);
-  }
-
-  get receiverIdentifier() {
-    return this.readableIdentifier(this.payloadReceiver);
-  }
-
-  get receiverServer(): net.Server | null {
-    return serverMap.get(this.payloadReceiver) ?? null;
-  }
-
-  private endSocketConnection(s: net.Socket) {
-    s.end(() => {
-      s.destroy();
-    });
-  }
-
-  // Create the server
-
-  public build(): net.Server {
-    if (this.payloadReceiver === null || this.identifier === null || this.payloadProcessor === null) {
-      throw new Error("Server properties are not completely built. Make sure all properties are given value before calling build()!");
-    }
-
-    const server = net
-      .createServer((socket) => {
-        console.log(`${this.meIdentifier} received connection from ${socket.remoteAddress}:${socket.remotePort}`);
-
-        let data: string = ''; // data received from `socket`
-
-        socket.on('data', (chunk: Buffer) => {
-          console.log(`${this.meIdentifier} received ${chunk.byteLength} bytes from ${this.receiverIdentifier}`);
-
-          data += chunk.toString();
-        });
-
-        socket.on('end', () => {
-          console.log(`${socket.remoteAddress}:${socket.remotePort} finished sending ${this.meIdentifier} ${data}`);
-          const redirectSocket = net.createConnection(
-            {
-              host: this.payloadReceiver.host,
-              port: this.payloadReceiver.port,
-              localAddress: this.identifier.host,
-            },
-            () => {
-              console.log(`${this.meIdentifier} successfully established a connection with the receiving end ${this.receiverIdentifier}`);
-              if (data) {
-                const unpacked: T = this.payloadProcessor.unpack(data);
-                if(this.payloadProcessor.filter(unpacked)) {
-                  const next: M = this.payloadProcessor.map(unpacked);
-                  const nextPacked: string = this.payloadProcessor.pack(next);
-
-                  redirectSocket.write(nextPacked, () => {
-                    console.log(`${this.meIdentifier} finished writing to ${redirectSocket.remoteAddress}`);
-                    this.endSocketConnection(redirectSocket);
-                  });
-                } else {
-                  this.endSocketConnection(redirectSocket);
-                }
-              } else {
-                this.endSocketConnection(socket);
-              }
-            }
-          );
-
-          redirectSocket.on('close', () => {
-            console.log(`Connection between ${this.meIdentifier} and ${this.receiverIdentifier} is closed`);
-
-            this.endSocketConnection(socket);
-          });
-        });
-      })
-      .listen(this.identifier.port, this.identifier.host);
-
-    serverMap.set(this.identifier, server);
-    return server;
-  }
+	return [A, B, C, initSocket] as const;
 }
